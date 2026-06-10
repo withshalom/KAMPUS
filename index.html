@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>KAMPUS — Kernel-Aided Map Plan Unified Site</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne+Mono&family=Syne:wght@600;800&family=Fira+Code:wght@400;500&display=swap');
+
+/* ── KAMPUS DESIGN TOKENS ─────────────────────────────────────────────────────
+   Identity: civil survey / topo map / field instrument
+   Palette: survey orange accent, topo brown-green canvas, ink-dark chrome
+   Typography: Syne for brand, Fira Code for data/coords (engineering precision)
+   Signature: contour lines as living UI texture — the canvas IS the product
+──────────────────────────────────────────────────────────────────────────────*/
+:root {
+  --void:     #0a0c08;
+  --panel:    #111410;
+  --panel2:   #181c14;
+  --border:   rgba(255,255,255,0.07);
+  --border-hi:rgba(255,255,255,0.14);
+  --hover:    rgba(255,255,255,0.04);
+
+  /* Survey orange — field instrument color, safety marker */
+  --accent:   #e87820;
+  --accent2:  #ffaa44;
+  --acc-dim:  rgba(232,120,32,0.12);
+
+  /* Topo colors */
+  --contour:  #8faa60;
+  --elev-hi:  #e8c870;
+  --elev-lo:  #4a6840;
+  --water:    #3a7888;
+  --cut:      #c84040;
+  --fill:     #4080c8;
+
+  --t1: rgba(255,255,255,0.88);
+  --t2: rgba(255,255,255,0.55);
+  --t3: rgba(255,255,255,0.28);
+
+  --fm: 'Fira Code', monospace;
+  --fd: 'Syne', sans-serif;
+  --fs: 'Syne Mono', monospace;
+
+  --topbar-h: 44px;
+  --sidebar-w: 220px;
+  --status-h: 26px;
+  --kommand-h: 32px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--void); color:var(--t1); font-family:var(--fm); }
+
+/* ── LAYOUT ──────────────────────────────────────────────────────────────────*/
+#app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: var(--topbar-h) 1fr var(--kommand-h) var(--status-h);
+  width: 100vw; height: 100vh; overflow: hidden;
+}
+
+/* ── TOPBAR ───────────────────────────────────────────────────────────────── */
+#topbar {
+  grid-column: 1 / -1;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 0;
+  padding: 0 12px;
+  z-index: 50;
+}
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  margin-right: 16px; flex-shrink: 0;
+}
+.brand-mark {
+  width: 28px; height: 28px;
+  background: var(--accent);
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--fd); font-weight: 800; font-size: 10px;
+  color: var(--void); letter-spacing: -0.02em;
+}
+.brand-name {
+  font-family: var(--fd); font-weight: 800; font-size: 15px;
+  color: var(--t1); letter-spacing: -0.01em;
+}
+.brand-sub {
+  font-family: var(--fm); font-size: 8px; color: var(--t3);
+  letter-spacing: 0.12em; text-transform: uppercase; margin-top: 1px;
+}
+
+.tb-sep { width: 1px; height: 20px; background: var(--border); margin: 0 8px; flex-shrink:0; }
+
+.tb-btn {
+  height: 28px; padding: 0 10px;
+  background: none; border: 1px solid transparent;
+  border-radius: 3px; color: var(--t2);
+  font-family: var(--fm); font-size: 9px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  cursor: pointer; transition: all 0.1s; white-space: nowrap;
+  flex-shrink: 0;
+}
+.tb-btn:hover { border-color: var(--border-hi); color: var(--t1); }
+.tb-btn.active { background: var(--acc-dim); border-color: rgba(232,120,32,0.4); color: var(--accent); }
+
+/* Tool group */
+.tb-tools { display:flex; align-items:center; gap:3px; }
+
+/* Unit badge */
+#badge-units {
+  font-family: var(--fm); font-size: 9px;
+  padding: 3px 8px; border: 1px solid var(--border);
+  border-radius: 3px; cursor: pointer;
+  color: var(--t2); letter-spacing: 0.1em;
+  transition: all 0.1s;
+}
+#badge-units:hover { border-color: var(--border-hi); color: var(--t1); }
+
+#coord-display {
+  margin-left: auto;
+  font-family: var(--fm); font-size: 9px;
+  color: var(--t3); letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* ── SIDEBAR ──────────────────────────────────────────────────────────────── */
+#sidebar {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column;
+}
+
+.sb-section {
+  padding: 10px 10px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.sb-label {
+  font-family: var(--fm); font-size: 7.5px;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--t3); margin-bottom: 7px;
+}
+
+.sb-row {
+  display: flex; align-items: center;
+  justify-content: space-between; margin-bottom: 5px;
+}
+.sb-key { font-size: 9px; color: var(--t2); }
+.sb-val { font-size: 9px; color: var(--accent); font-weight: 500; }
+
+.sb-input {
+  width: 100%; background: var(--panel2);
+  border: 1px solid var(--border); border-radius: 3px;
+  color: var(--t1); font-family: var(--fm); font-size: 10px;
+  padding: 4px 7px; outline: none; margin-bottom: 5px;
+}
+.sb-input:focus { border-color: var(--accent); }
+
+.sb-btn {
+  width: 100%; padding: 6px 0;
+  background: none; border: 1px solid var(--border);
+  border-radius: 3px; color: var(--t2);
+  font-family: var(--fm); font-size: 9px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  cursor: pointer; transition: all 0.1s; margin-bottom: 4px;
+}
+.sb-btn:hover { border-color: var(--accent); color: var(--accent); }
+.sb-btn.primary { border-color: rgba(232,120,32,0.4); color: var(--accent); }
+.sb-btn.danger  { border-color: rgba(200,60,60,0.4); color: #e06060; }
+
+/* Cut/fill legend */
+.legend-row {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 4px;
+}
+.legend-swatch {
+  width: 14px; height: 10px; border-radius: 2px; flex-shrink:0;
+}
+.legend-label { font-size: 9px; color: var(--t2); }
+
+/* Point list */
+#point-list {
+  max-height: 180px; overflow-y: auto;
+  margin-top: 4px;
+}
+.pt-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 3px 6px; border-radius: 3px;
+  font-size: 9px; cursor: pointer;
+  transition: background 0.08s;
+}
+.pt-row:hover { background: var(--hover); }
+.pt-row.selected { background: var(--acc-dim); color: var(--accent); }
+.pt-num { color: var(--t3); min-width: 20px; }
+.pt-coords { color: var(--t2); font-size: 8px; }
+.pt-elev { color: var(--accent2); font-weight: 500; }
+.pt-del { color: var(--t3); cursor: pointer; padding: 0 3px; }
+.pt-del:hover { color: #e06060; }
+
+/* ── CANVAS ───────────────────────────────────────────────────────────────── */
+#canvas-wrap {
+  position: relative; overflow: hidden;
+  background: #0e110a;
+}
+
+#main-canvas {
+  display: block; position: absolute; top:0; left:0;
+  cursor: crosshair;
+}
+
+/* ── KOMMAND ──────────────────────────────────────────────────────────────── */
+#kommand-bar {
+  grid-column: 1 / -1;
+  background: var(--panel2);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 10px; gap: 8px;
+}
+#k-prefix {
+  font-family: var(--fm); font-size: 9px;
+  color: var(--accent); letter-spacing: 0.12em;
+  min-width: 30px;
+}
+#k-input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--t1); font-family: var(--fm); font-size: 10px;
+}
+#k-echo {
+  font-family: var(--fm); font-size: 9px;
+  color: var(--t3); letter-spacing: 0.06em;
+}
+
+/* ── STATUSBAR ────────────────────────────────────────────────────────────── */
+#statusbar {
+  grid-column: 1 / -1;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 10px; gap: 16px;
+  font-size: 8px; color: var(--t3);
+  letter-spacing: 0.08em;
+}
+.st-item { display: flex; align-items: center; gap: 5px; }
+.st-val  { color: var(--t2); }
+
+/* ── ELEVATION INPUT POPUP ────────────────────────────────────────────────── */
+#elev-popup {
+  position: absolute;
+  background: var(--panel);
+  border: 1px solid var(--border-hi);
+  border-radius: 6px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  z-index: 100;
+  display: none;
+  min-width: 160px;
+}
+#elev-popup.open { display: block; }
+#elev-popup label {
+  font-size: 8px; color: var(--t3); letter-spacing: 0.1em;
+  text-transform: uppercase; display: block; margin-bottom: 5px;
+}
+#elev-val-input {
+  width: 100%; background: var(--panel2);
+  border: 1px solid var(--accent);
+  border-radius: 3px; color: var(--t1);
+  font-family: var(--fm); font-size: 12px;
+  padding: 5px 8px; outline: none;
+}
+
+/* ── TOAST ────────────────────────────────────────────────────────────────── */
+#toast {
+  position: absolute; bottom: 60px; left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10,12,8,0.92);
+  border: 1px solid var(--border-hi);
+  border-radius: 4px;
+  padding: 7px 16px;
+  font-family: var(--fm); font-size: 9px;
+  letter-spacing: 0.08em; color: var(--t1);
+  opacity: 0; transition: opacity 0.25s;
+  pointer-events: none; white-space: nowrap; z-index: 200;
+}
+#toast.show { opacity: 1; }
+
+/* Splash */
+#splash {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(10,12,8,0.96);
+  backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+}
+.splash-box {
+  background: var(--panel);
+  border: 1px solid var(--border-hi);
+  border-radius: 10px;
+  width: 360px; max-width: 95vw;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.8);
+}
+.splash-head {
+  padding: 24px 24px 16px;
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+}
+.splash-kampus {
+  font-family: var(--fd); font-weight: 800;
+  font-size: 28px; letter-spacing: -0.02em;
+  color: var(--accent);
+}
+.splash-sub {
+  font-family: var(--fm); font-size: 8px;
+  letter-spacing: 0.18em; color: var(--t3);
+  text-transform: uppercase; margin-top: 4px;
+}
+.splash-body { padding: 20px 24px; }
+.splash-q {
+  font-family: var(--fm); font-size: 10px;
+  color: var(--t2); letter-spacing: 0.08em;
+  text-transform: uppercase; margin-bottom: 10px;
+  text-align: center;
+}
+.splash-units {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.splash-unit-btn {
+  padding: 12px 8px;
+  background: none; border: 1px solid var(--border);
+  border-radius: 5px; cursor: pointer;
+  font-family: var(--fm); font-size: 11px;
+  color: var(--t2); text-align: center;
+  transition: all 0.12s;
+}
+.splash-unit-btn:hover { border-color: var(--accent); color: var(--accent); }
+.splash-unit-main { font-size: 14px; font-weight: 600; display: block; }
+.splash-unit-sub  { font-size: 8px; color: var(--t3); display: block; margin-top: 3px; }
+
+/* Return button */
+#btn-return {
+  position: absolute; top: 8px; right: 12px;
+  font-family: var(--fm); font-size: 8px;
+  color: var(--t3); letter-spacing: 0.1em;
+  text-decoration: none; padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: 3px;
+  transition: all 0.1s;
+}
+#btn-return:hover { color: var(--t1); border-color: var(--border-hi); }
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <div class="splash-box">
+    <div class="splash-head">
+      <div class="splash-kampus">KAMPUS</div>
+      <div class="splash-sub">Kernel-Aided Map Plan Unified Site</div>
+    </div>
+    <div class="splash-body">
+      <div class="splash-q">Select working units</div>
+      <div class="splash-units">
+        <button class="splash-unit-btn" onclick="initUnits('metric')">
+          <span class="splash-unit-main">Metric</span>
+          <span class="splash-unit-sub">Metres · km</span>
+        </button>
+        <button class="splash-unit-btn" onclick="initUnits('imperial')">
+          <span class="splash-unit-main">Imperial</span>
+          <span class="splash-unit-sub">Feet · miles</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+
+  <!-- TOPBAR -->
+  <div id="topbar">
+    <a href="https://kadsuite.com" id="btn-return">← KADsuite</a>
+    <div class="brand">
+      <div class="brand-mark">KMP</div>
+      <div>
+        <div class="brand-name">.KAMPUS</div>
+        <div class="brand-sub">Site Engineering</div>
+      </div>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-tools">
+      <button class="tb-btn active" id="tb-select"  onclick="setTool('select')" title="Select (V)">Select</button>
+      <button class="tb-btn"        id="tb-boundary" onclick="setTool('boundary')" title="Site Boundary (B)">Boundary</button>
+      <button class="tb-btn"        id="tb-point"   onclick="setTool('point')" title="Survey Point (P)">Point</button>
+      <button class="tb-btn"        id="tb-pad"     onclick="setTool('pad')" title="Grade Pad (G)">Pad</button>
+      <button class="tb-btn"        id="tb-road"    onclick="setTool('road')" title="Road Centerline (R)">Road</button>
+      <button class="tb-btn"        id="tb-dim"     onclick="setTool('dim')" title="Dimension (D)">Dim</button>
+    </div>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" onclick="computeTIN()" title="Rebuild TIN surface">⟳ TIN</button>
+    <button class="tb-btn" onclick="computeContours()" title="Extract contours">Contours</button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" onclick="exportDXF()">↓ DXF</button>
+    <button class="tb-btn" onclick="exportCSV()">↓ CSV</button>
+    <div class="tb-sep"></div>
+    <div id="badge-units" onclick="toggleUnits()" title="Toggle units">MET</div>
+    <div id="coord-display">E: — · N: — · Z: —</div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+
+    <!-- Surface stats -->
+    <div class="sb-section">
+      <div class="sb-label">Surface</div>
+      <div class="sb-row"><span class="sb-key">Points</span><span class="sb-val" id="st-pts">0</span></div>
+      <div class="sb-row"><span class="sb-key">Triangles</span><span class="sb-val" id="st-tris">0</span></div>
+      <div class="sb-row"><span class="sb-key">Min Elev</span><span class="sb-val" id="st-minz">—</span></div>
+      <div class="sb-row"><span class="sb-key">Max Elev</span><span class="sb-val" id="st-maxz">—</span></div>
+    </div>
+
+    <!-- Contours -->
+    <div class="sb-section">
+      <div class="sb-label">Contours</div>
+      <div class="sb-row">
+        <span class="sb-key">Interval</span>
+        <input id="contour-interval" class="sb-input" style="width:70px;margin:0;" type="number" value="1" min="0.1" step="0.5">
+      </div>
+      <button class="sb-btn primary" onclick="computeContours()">Generate Contours</button>
+      <div class="legend-row"><div class="legend-swatch" style="background:#a0c060;"></div><span class="legend-label">Minor contour</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#e8c870;"></div><span class="legend-label">Index (5× interval)</span></div>
+    </div>
+
+    <!-- Grading -->
+    <div class="sb-section">
+      <div class="sb-label">Grading</div>
+      <div class="sb-row">
+        <span class="sb-key">Pad Elev</span>
+        <input id="pad-elev" class="sb-input" style="width:70px;margin:0;" type="number" value="0" step="0.1">
+      </div>
+      <button class="sb-btn primary" onclick="computeCutFill()">Calc Cut / Fill</button>
+      <div style="margin-top:6px;">
+        <div class="sb-row"><span class="sb-key">Cut Vol</span><span class="sb-val" id="vol-cut" style="color:var(--cut);">—</span></div>
+        <div class="sb-row"><span class="sb-key">Fill Vol</span><span class="sb-val" id="vol-fill" style="color:var(--fill);">—</span></div>
+        <div class="sb-row"><span class="sb-key">Net</span><span class="sb-val" id="vol-net">—</span></div>
+      </div>
+      <div style="margin-top:6px;">
+        <div class="legend-row"><div class="legend-swatch" style="background:rgba(200,64,64,0.5);"></div><span class="legend-label">Cut area</span></div>
+        <div class="legend-row"><div class="legend-swatch" style="background:rgba(64,128,200,0.5);"></div><span class="legend-label">Fill area</span></div>
+      </div>
+    </div>
+
+    <!-- Survey points -->
+    <div class="sb-section" style="flex:1;">
+      <div class="sb-label">Survey Points</div>
+      <div id="point-list"></div>
+      <button class="sb-btn danger" style="margin-top:6px;" onclick="clearPoints()">Clear Points</button>
+    </div>
+
+  </div>
+
+  <!-- CANVAS -->
+  <div id="canvas-wrap">
+    <canvas id="main-canvas"></canvas>
+
+    <!-- Elevation input popup -->
+    <div id="elev-popup">
+      <label>Elevation (<span id="elev-unit-label">m</span>)</label>
+      <input id="elev-val-input" type="number" step="0.1" value="0">
+    </div>
+
+    <div id="toast"></div>
+  </div>
+
+  <!-- KOMMAND -->
+  <div id="kommand-bar">
+    <span id="k-prefix">≫</span>
+    <input id="k-input" placeholder="KOMMAND — P point · B boundary · G pad · contours · R road · clear · DXF · CSV" autocomplete="off" spellcheck="false">
+    <span id="k-echo"></span>
+  </div>
+
+  <!-- STATUSBAR -->
+  <div id="statusbar">
+    <div class="st-item">KAMPUS<span class="st-val">v0.1</span></div>
+    <div class="st-item">Points<span class="st-val" id="sb-pts">0</span></div>
+    <div class="st-item">TIN<span class="st-val" id="sb-tris">—</span></div>
+    <div class="st-item">Contours<span class="st-val" id="sb-ctrs">—</span></div>
+    <div class="st-item" style="margin-left:auto;">kadsuite.com</div>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+// ════════════════════════════════════════════════════════════════════════════
+// KAMPUS — Kernel-Aided Map Plan Unified Site
+// Mach 1: TIN surface, contour extraction, cut/fill grading, DXF/CSV export
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── UNITS ─────────────────────────────────────────────────────────────────────
+var units = 'metric'; // 'metric' | 'imperial'
+var SPLASH_KEY = 'kampus_units';
+
+function toDisp(v)  { return units === 'imperial' ? v * 3.28084 : v; }
+function fromDisp(v){ return units === 'imperial' ? v / 3.28084 : v; }
+function uLabel()   { return units === 'imperial' ? 'ft' : 'm'; }
+function uLabelVol(){ return units === 'imperial' ? 'ft³' : 'm³'; }
+function fmtZ(v)    { return toDisp(v).toFixed(3) + ' ' + uLabel(); }
+function fmtVol(v)  { var cv = units==='imperial' ? v*35.3147 : v; return cv.toFixed(2) + ' ' + uLabelVol(); }
+
+function initUnits(u) {
+  units = u;
+  try { localStorage.setItem(SPLASH_KEY, u); } catch(e) {}
+  document.getElementById('splash').style.display = 'none';
+  document.getElementById('badge-units').textContent = u === 'imperial' ? 'IMP' : 'MET';
+  document.getElementById('elev-unit-label').textContent = uLabel();
+  document.getElementById('contour-interval').value = u === 'imperial' ? '5' : '1';
+  document.getElementById('pad-elev').value = '0';
+  initCamera(); render();
+}
+
+function toggleUnits() {
+  var newU = units === 'metric' ? 'imperial' : 'metric';
+  initUnits(newU);
+  showToast('Units: ' + (newU === 'imperial' ? 'Feet' : 'Metres'));
+}
+
+// ── CANVAS / CAMERA ────────────────────────────────────────────────────────────
+var canvas = document.getElementById('main-canvas');
+var ctx    = canvas.getContext('2d');
+var wrap   = document.getElementById('canvas-wrap');
+var cam    = { panX:0, panY:0, zoom:60 };
+
+function resizeCanvas() {
+  var r = wrap.getBoundingClientRect();
+  canvas.width  = r.width;
+  canvas.height = r.height;
+  render();
+}
+
+function initCamera() {
+  cam.panX = canvas.width  / 2;
+  cam.panY = canvas.height / 2;
+  cam.zoom = 60;
+}
+
+function W2S(wx, wy) { return { x: wx * cam.zoom + cam.panX, y: -wy * cam.zoom + cam.panY }; }
+function S2W(sx, sy) { return { x: (sx - cam.panX) / cam.zoom, y: -(sy - cam.panY) / cam.zoom }; }
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+var surveyPts  = [];   // [{x,y,z,id}]
+var tin        = [];   // [{a,b,c}] triangles — indices into surveyPts
+var contours   = [];   // [{z, segs:[{x1,y1,x2,y2}], index:bool}]
+var boundary   = [];   // [{x,y}] site boundary polygon
+var roads      = [];   // [{pts:[{x,y}]}] road centerlines
+var dims       = [];   // dimension objects
+var padElev    = 0;    // grading pad elevation (internal metres)
+var cutFill    = [];   // [{tri_idx, type:'cut'|'fill', area, vol}]
+var nextId     = 1;
+var activeTool = 'select';
+var selectedPt = null;
+var showTIN    = false;
+
+// Drawing state
+var drawing      = false;
+var boundaryPts  = [];   // in-progress boundary
+var roadPts      = [];
+var dimState     = { active:false, p1:null };
+var mouseWorld   = { x:0, y:0 };
+var hoveredPt    = null;
+
+// Pan state
+var isPanning    = false;
+var panStart     = { x:0, y:0 };
+
+// ── TOOLS ─────────────────────────────────────────────────────────────────────
+var TOOLS = ['select','boundary','point','pad','road','dim'];
+
+function setTool(t) {
+  activeTool = t;
+  TOOLS.forEach(function(n) {
+    var el = document.getElementById('tb-' + n);
+    if (el) el.classList.toggle('active', n === t);
+  });
+  boundaryPts = []; roadPts = [];
+  dimState = { active:false, p1:null };
+  canvas.style.cursor = t === 'point' ? 'cell' : 'crosshair';
+  kecho(t.toUpperCase() + ' tool active');
+}
+
+// ── DELAUNAY TRIANGULATION (Bowyer-Watson) ────────────────────────────────────
+function computeTIN() {
+  if (surveyPts.length < 3) { showToast('Need at least 3 survey points'); return; }
+  tin = delaunay(surveyPts);
+  document.getElementById('st-tris').textContent = tin.length;
+  document.getElementById('sb-tris').textContent = tin.length + ' tri';
+  var zs = surveyPts.map(function(p) { return p.z; });
+  var minz = Math.min.apply(null, zs), maxz = Math.max.apply(null, zs);
+  document.getElementById('st-minz').textContent = fmtZ(minz);
+  document.getElementById('st-maxz').textContent = fmtZ(maxz);
+  showToast('TIN: ' + tin.length + ' triangles from ' + surveyPts.length + ' points');
+  computeContours();
+  render();
+}
+
+function delaunay(pts) {
+  if (pts.length < 3) return [];
+  // Compute super-triangle bounding all points
+  var minX = pts[0].x, minY = pts[0].y, maxX = pts[0].x, maxY = pts[0].y;
+  pts.forEach(function(p) {
+    minX = Math.min(minX,p.x); minY = Math.min(minY,p.y);
+    maxX = Math.max(maxX,p.x); maxY = Math.max(maxY,p.y);
+  });
+  var dx = maxX - minX, dy = maxY - minY;
+  var dmax = Math.max(dx, dy) * 2;
+  var mid  = { x: (minX+maxX)/2, y: (minY+maxY)/2 };
+  // Super-triangle vertices
+  var st = [
+    { x: mid.x - 20*dmax, y: mid.y - dmax, z:0 },
+    { x: mid.x,           y: mid.y + 20*dmax, z:0 },
+    { x: mid.x + 20*dmax, y: mid.y - dmax, z:0 },
+  ];
+  var allPts = pts.concat(st);
+  var n = pts.length;
+  // Initial super-triangle
+  var tris = [{ a: n, b: n+1, c: n+2 }];
+
+  for (var pi = 0; pi < n; pi++) {
+    var p = allPts[pi];
+    var bad = [];
+    // Find all triangles whose circumcircle contains p
+    for (var ti = 0; ti < tris.length; ti++) {
+      var t = tris[ti];
+      if (inCircumcircle(allPts[t.a], allPts[t.b], allPts[t.c], p)) {
+        bad.push(ti);
+      }
+    }
+    // Find boundary of polygonal hole
+    var boundary_edges = [];
+    for (var bi = 0; bi < bad.length; bi++) {
+      var bt = tris[bad[bi]];
+      var edges = [[bt.a,bt.b],[bt.b,bt.c],[bt.c,bt.a]];
+      for (var ei = 0; ei < 3; ei++) {
+        var shared = false;
+        for (var bj = 0; bj < bad.length; bj++) {
+          if (bj === bi) continue;
+          var bt2 = tris[bad[bj]];
+          var e2 = edges[ei];
+          if ((bt2.a===e2[0]&&bt2.b===e2[1])||(bt2.b===e2[0]&&bt2.a===e2[1])||
+              (bt2.a===e2[0]&&bt2.c===e2[1])||(bt2.c===e2[0]&&bt2.a===e2[1])||
+              (bt2.b===e2[0]&&bt2.c===e2[1])||(bt2.c===e2[0]&&bt2.b===e2[1])) {
+            shared = true; break;
+          }
+        }
+        if (!shared) boundary_edges.push(edges[ei]);
+      }
+    }
+    // Remove bad triangles
+    bad.sort(function(a,b){return b-a;});
+    bad.forEach(function(i){ tris.splice(i,1); });
+    // Re-triangulate hole
+    for (var be = 0; be < boundary_edges.length; be++) {
+      tris.push({ a: boundary_edges[be][0], b: boundary_edges[be][1], c: pi });
+    }
+  }
+  // Remove triangles sharing super-triangle vertices
+  return tris.filter(function(t) {
+    return t.a < n && t.b < n && t.c < n;
+  });
+}
+
+function inCircumcircle(a, b, c, p) {
+  var ax=a.x-p.x, ay=a.y-p.y;
+  var bx=b.x-p.x, by=b.y-p.y;
+  var cx=c.x-p.x, cy=c.y-p.y;
+  var det = ax*(by*( cx*cx+cy*cy) - cy*(bx*bx+by*by))
+           -ay*(bx*(cx*cx+cy*cy) - cx*(bx*bx+by*by))
+           +(ax*ax+ay*ay)*(bx*cy - by*cx);
+  return det > 0;
+}
+
+// ── CONTOUR EXTRACTION ────────────────────────────────────────────────────────
+function computeContours() {
+  if (tin.length === 0) { computeTIN(); return; }
+  var interval = parseFloat(document.getElementById('contour-interval').value) || 1;
+  if (units === 'imperial') interval = fromDisp(interval); // convert to metres
+  var zs = surveyPts.map(function(p){return p.z;});
+  var minZ = Math.min.apply(null,zs), maxZ = Math.max.apply(null,zs);
+  var startZ = Math.ceil(minZ / interval) * interval;
+  contours = [];
+  var nContours = 0;
+  for (var z = startZ; z <= maxZ + 1e-9; z += interval) {
+    var segs = [];
+    var isIndex = Math.abs(Math.round(z / (interval*5)) * interval*5 - z) < 1e-6;
+    for (var ti = 0; ti < tin.length; ti++) {
+      var seg = contourSegment(tin[ti], z);
+      if (seg) segs.push(seg);
+    }
+    if (segs.length > 0) {
+      contours.push({ z: z, segs: segs, index: isIndex });
+      nContours += segs.length;
+    }
+  }
+  document.getElementById('sb-ctrs').textContent = contours.length + ' lines';
+  showToast('Contours: ' + contours.length + ' at ' + fmtZ(interval) + ' interval');
+  render();
+}
+
+function contourSegment(tri, z) {
+  var pa = surveyPts[tri.a], pb = surveyPts[tri.b], pc = surveyPts[tri.c];
+  var pts = [];
+  var edges = [[pa,pb],[pb,pc],[pc,pa]];
+  for (var i = 0; i < 3; i++) {
+    var p1 = edges[i][0], p2 = edges[i][1];
+    var z1 = p1.z, z2 = p2.z;
+    if ((z1 <= z && z2 >= z) || (z2 <= z && z1 >= z)) {
+      if (Math.abs(z2-z1) < 1e-10) continue;
+      var t = (z - z1) / (z2 - z1);
+      pts.push({ x: p1.x + t*(p2.x-p1.x), y: p1.y + t*(p2.y-p1.y) });
+    }
+  }
+  if (pts.length === 2) return { x1:pts[0].x, y1:pts[0].y, x2:pts[1].x, y2:pts[1].y };
+  return null;
+}
+
+// ── CUT / FILL ────────────────────────────────────────────────────────────────
+function computeCutFill() {
+  if (tin.length === 0) { showToast('Generate TIN first'); return; }
+  padElev = fromDisp(parseFloat(document.getElementById('pad-elev').value) || 0);
+  var totalCut = 0, totalFill = 0;
+  cutFill = [];
+  for (var ti = 0; ti < tin.length; ti++) {
+    var t = tin[ti];
+    var pa = surveyPts[t.a], pb = surveyPts[t.b], pc = surveyPts[t.c];
+    var area = triArea2D(pa,pb,pc);
+    var avgZ = (pa.z + pb.z + pc.z) / 3;
+    var diff = padElev - avgZ;
+    var vol = Math.abs(diff) * area / 3;
+    var type = diff > 0 ? 'fill' : 'cut';
+    cutFill.push({ idx:ti, type:type, area:area, vol:vol });
+    if (type === 'cut')  totalCut  += vol;
+    else                 totalFill += vol;
+  }
+  var net = totalFill - totalCut;
+  document.getElementById('vol-cut').textContent  = fmtVol(totalCut);
+  document.getElementById('vol-fill').textContent = fmtVol(totalFill);
+  document.getElementById('vol-net').textContent  =
+    (net >= 0 ? '+' : '') + fmtVol(Math.abs(net)) + (net >= 0 ? ' net fill' : ' net cut');
+  showToast('Cut: ' + fmtVol(totalCut) + '  Fill: ' + fmtVol(totalFill));
+  render();
+}
+
+function triArea2D(a, b, c) {
+  return Math.abs((b.x-a.x)*(c.y-a.y) - (c.x-a.x)*(b.y-a.y)) / 2;
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+var RAF = null;
+function scheduleDraw() {
+  if (!RAF) RAF = requestAnimationFrame(function(){ RAF=null; render(); });
+}
+
+function render() {
+  var W = canvas.width, H = canvas.height;
+  ctx.clearRect(0,0,W,H);
+
+  // Background — dark earth tone
+  ctx.fillStyle = '#0e110a';
+  ctx.fillRect(0,0,W,H);
+
+  // Grid
+  drawGrid(W,H);
+
+  // TIN triangles with cut/fill shading
+  if (tin.length > 0) drawTIN(W,H);
+
+  // Contours
+  drawContours();
+
+  // Boundary polygon
+  drawBoundary();
+
+  // Roads
+  drawRoads();
+
+  // In-progress boundary/road
+  if (activeTool === 'boundary' && boundaryPts.length > 0) drawInProgress(boundaryPts, 'rgba(232,120,32,0.8)');
+  if (activeTool === 'road'     && roadPts.length     > 0) drawInProgress(roadPts,     'rgba(255,220,80,0.8)');
+
+  // Survey points
+  drawPoints();
+
+  // Dim preview
+  if (activeTool === 'dim' && dimState.active && dimState.p1) drawDimPreview();
+
+  // Origin
+  drawOrigin();
+}
+
+function drawGrid(W,H) {
+  var sp = gridSpacing();
+  var tl = S2W(0,0), br = S2W(W,H);
+  var x0 = Math.floor(Math.min(tl.x,br.x)/sp)*sp;
+  var x1 = Math.ceil( Math.max(tl.x,br.x)/sp)*sp;
+  var y0 = Math.floor(Math.min(tl.y,br.y)/sp)*sp;
+  var y1 = Math.ceil( Math.max(tl.y,br.y)/sp)*sp;
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (var x=x0; x<=x1; x+=sp) { var sx=W2S(x,0).x; ctx.moveTo(sx,0); ctx.lineTo(sx,H); }
+  for (var y=y0; y<=y1; y+=sp) { var sy=W2S(0,y).y; ctx.moveTo(0,sy); ctx.lineTo(W,sy); }
+  ctx.stroke();
+  // Axis labels
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.font = '8px Fira Code, monospace';
+  for (var xg=Math.ceil(x0/sp)*sp; xg<=x1; xg+=sp*5) {
+    var sx2=W2S(xg,0).x;
+    if(sx2>10&&sx2<W-10) ctx.fillText(toDisp(xg).toFixed(1), sx2+2, H-6);
+  }
+}
+
+function gridSpacing() {
+  var steps = [0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000];
+  for (var i=0;i<steps.length;i++) { if (steps[i]*cam.zoom>=30) return steps[i]; }
+  return 1000;
+}
+
+function drawTIN(W,H) {
+  // TIN wireframe
+  if (showTIN) {
+    ctx.strokeStyle = 'rgba(100,150,80,0.15)';
+    ctx.lineWidth = 0.5;
+    for (var ti=0;ti<tin.length;ti++) {
+      var t=tin[ti], pa=surveyPts[t.a], pb=surveyPts[t.b], pc=surveyPts[t.c];
+      var sa=W2S(pa.x,pa.y), sb=W2S(pb.x,pb.y), sc=W2S(pc.x,pc.y);
+      ctx.beginPath(); ctx.moveTo(sa.x,sa.y); ctx.lineTo(sb.x,sb.y);
+      ctx.lineTo(sc.x,sc.y); ctx.closePath(); ctx.stroke();
+    }
+  }
+  // Cut/fill shading
+  if (cutFill.length > 0) {
+    for (var ci=0;ci<cutFill.length;ci++) {
+      var cf=cutFill[ci], t2=tin[cf.idx];
+      var pa2=surveyPts[t2.a], pb2=surveyPts[t2.b], pc2=surveyPts[t2.c];
+      var sa2=W2S(pa2.x,pa2.y), sb2=W2S(pb2.x,pb2.y), sc2=W2S(pc2.x,pc2.y);
+      ctx.beginPath();
+      ctx.moveTo(sa2.x,sa2.y); ctx.lineTo(sb2.x,sb2.y); ctx.lineTo(sc2.x,sc2.y);
+      ctx.closePath();
+      ctx.fillStyle = cf.type==='cut' ? 'rgba(200,64,64,0.3)' : 'rgba(64,128,200,0.3)';
+      ctx.fill();
+    }
+  }
+}
+
+function drawContours() {
+  for (var ci=0;ci<contours.length;ci++) {
+    var c=contours[ci];
+    ctx.strokeStyle = c.index ? '#e8c870' : '#6a9040';
+    ctx.lineWidth   = c.index ? 1.5 : 0.8;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (var si=0;si<c.segs.length;si++) {
+      var seg=c.segs[si];
+      var s1=W2S(seg.x1,seg.y1), s2=W2S(seg.x2,seg.y2);
+      ctx.moveTo(s1.x,s1.y); ctx.lineTo(s2.x,s2.y);
+    }
+    ctx.stroke();
+    // Index contour labels
+    if (c.index && c.segs.length > 0) {
+      var seg0=c.segs[0];
+      var sm=W2S((seg0.x1+seg0.x2)/2,(seg0.y1+seg0.y2)/2);
+      ctx.fillStyle='#e8c870'; ctx.font='8px Fira Code,monospace';
+      ctx.fillText(toDisp(c.z).toFixed(1)+uLabel(), sm.x+2, sm.y-2);
+    }
+  }
+}
+
+function drawBoundary() {
+  if (boundary.length < 2) return;
+  var s0=W2S(boundary[0].x,boundary[0].y);
+  ctx.strokeStyle='rgba(232,120,32,0.8)'; ctx.lineWidth=1.5; ctx.setLineDash([5,3]);
+  ctx.beginPath(); ctx.moveTo(s0.x,s0.y);
+  for (var i=1;i<boundary.length;i++) { var si=W2S(boundary[i].x,boundary[i].y); ctx.lineTo(si.x,si.y); }
+  ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+}
+
+function drawRoads() {
+  for (var ri=0;ri<roads.length;ri++) {
+    var r=roads[ri]; if(r.pts.length<2) continue;
+    var s0=W2S(r.pts[0].x,r.pts[0].y);
+    ctx.strokeStyle='rgba(255,220,80,0.7)'; ctx.lineWidth=2; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(s0.x,s0.y);
+    for (var ri2=1;ri2<r.pts.length;ri2++) { var sp=W2S(r.pts[ri2].x,r.pts[ri2].y); ctx.lineTo(sp.x,sp.y); }
+    ctx.stroke();
+  }
+}
+
+function drawInProgress(pts, color) {
+  if (pts.length === 0) return;
+  var s0=W2S(pts[0].x,pts[0].y);
+  ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(s0.x,s0.y);
+  for (var i=1;i<pts.length;i++) { var si=W2S(pts[i].x,pts[i].y); ctx.lineTo(si.x,si.y); }
+  var sm=W2S(mouseWorld.x,mouseWorld.y);
+  ctx.lineTo(sm.x,sm.y); ctx.stroke(); ctx.setLineDash([]);
+}
+
+function drawPoints() {
+  for (var i=0;i<surveyPts.length;i++) {
+    var p=surveyPts[i];
+    var sp=W2S(p.x,p.y);
+    var isSel = selectedPt && selectedPt.id===p.id;
+    var isHov = hoveredPt  && hoveredPt.id===p.id;
+    var r = isSel ? 6 : isHov ? 5 : 4;
+    // Elevation color mapping
+    var zs=surveyPts.map(function(q){return q.z;}), minZ=Math.min.apply(null,zs), maxZ=Math.max.apply(null,zs);
+    var t = maxZ>minZ ? (p.z-minZ)/(maxZ-minZ) : 0.5;
+    var col = elevColor(t);
+    ctx.fillStyle=col;
+    ctx.beginPath(); ctx.arc(sp.x,sp.y,r,0,Math.PI*2); ctx.fill();
+    if (isSel || isHov) {
+      ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(sp.x,sp.y,r+2,0,Math.PI*2); ctx.stroke();
+    }
+    // Point number
+    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='7px Fira Code,monospace';
+    ctx.fillText(String(i+1), sp.x+5, sp.y-3);
+    // Elevation label
+    ctx.fillStyle=col; ctx.font='8px Fira Code,monospace';
+    ctx.fillText(fmtZ(p.z), sp.x+5, sp.y+8);
+  }
+}
+
+function elevColor(t) {
+  // Low=deep green → mid=yellow-green → high=warm yellow
+  var r=Math.round(74  + t*(232-74));
+  var g=Math.round(104 + t*(200-104));
+  var b=Math.round(64  + t*(112-64));
+  return 'rgb('+r+','+g+','+b+')';
+}
+
+function drawDimPreview() {
+  var s1=W2S(dimState.p1.x,dimState.p1.y), sm=W2S(mouseWorld.x,mouseWorld.y);
+  ctx.strokeStyle='rgba(0,212,255,0.6)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(s1.x,s1.y); ctx.lineTo(sm.x,sm.y); ctx.stroke(); ctx.setLineDash([]);
+  var d=Math.hypot(mouseWorld.x-dimState.p1.x,mouseWorld.y-dimState.p1.y);
+  var midX=(s1.x+sm.x)/2, midY=(s1.y+sm.y)/2;
+  ctx.fillStyle='rgba(0,212,255,0.8)'; ctx.font='9px Fira Code,monospace';
+  ctx.fillText(fmtZ(d), midX+4, midY-4);
+}
+
+function drawOrigin() {
+  var o=W2S(0,0), sz=8;
+  ctx.save();
+  ctx.strokeStyle='rgba(232,120,32,0.35)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.beginPath();
+  ctx.moveTo(o.x-sz,o.y); ctx.lineTo(o.x+sz,o.y);
+  ctx.moveTo(o.x,o.y-sz); ctx.lineTo(o.x,o.y+sz);
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc(o.x,o.y,3,0,Math.PI*2);
+  ctx.strokeStyle='rgba(232,120,32,0.5)'; ctx.stroke();
+  ctx.fillStyle='rgba(232,120,32,0.4)'; ctx.font='8px Fira Code,monospace';
+  ctx.fillText('0,0', o.x+5, o.y-4);
+  ctx.restore();
+}
+
+// ── POINTER EVENTS ────────────────────────────────────────────────────────────
+function canvasXY(e) {
+  var r=canvas.getBoundingClientRect();
+  var cx = e.touches ? e.touches[0].clientX : e.clientX;
+  var cy = e.touches ? e.touches[0].clientY : e.clientY;
+  return { x:cx-r.left, y:cy-r.top };
+}
+
+canvas.addEventListener('pointermove', function(e) {
+  e.preventDefault();
+  var s=canvasXY(e); mouseWorld=S2W(s.x,s.y);
+  // Update coord display
+  document.getElementById('coord-display').textContent =
+    'E: ' + toDisp(mouseWorld.x).toFixed(3) + ' ' + uLabel() +
+    '  N: ' + toDisp(mouseWorld.y).toFixed(3) + ' ' + uLabel();
+  // Pan
+  if (isPanning) {
+    cam.panX = panStart.panX + (e.clientX - panStart.cx);
+    cam.panY = panStart.panY + (e.clientY - panStart.cy);
+    scheduleDraw(); return;
+  }
+  // Hover detection
+  var prev=hoveredPt;
+  hoveredPt=null;
+  for (var i=0;i<surveyPts.length;i++) {
+    var sp2=W2S(surveyPts[i].x,surveyPts[i].y);
+    if (Math.hypot(s.x-sp2.x,s.y-sp2.y)<10) { hoveredPt=surveyPts[i]; break; }
+  }
+  if (hoveredPt!==prev) scheduleDraw();
+  if (activeTool==='boundary'&&boundaryPts.length>0) scheduleDraw();
+  if (activeTool==='road'&&roadPts.length>0) scheduleDraw();
+  if (activeTool==='dim'&&dimState.active) scheduleDraw();
+}, {passive:false});
+
+canvas.addEventListener('pointerdown', function(e) {
+  e.preventDefault();
+  var s=canvasXY(e); mouseWorld=S2W(s.x,s.y);
+  // Middle click or space-pan
+  if (e.button===1 || (e.button===0 && spaceDown)) {
+    isPanning=true; canvas.setPointerCapture(e.pointerId);
+    panStart={cx:e.clientX, cy:e.clientY, panX:cam.panX, panY:cam.panY}; return;
+  }
+  if (e.button!==0) return;
+  var w=mouseWorld;
+  if      (activeTool==='point')    openElevPopup(s.x, s.y, w.x, w.y);
+  else if (activeTool==='boundary') { boundaryPts.push({x:w.x,y:w.y}); scheduleDraw(); }
+  else if (activeTool==='road')     { roadPts.push({x:w.x,y:w.y}); scheduleDraw(); }
+  else if (activeTool==='dim') {
+    if (!dimState.active) { dimState={active:true,p1:{x:w.x,y:w.y}}; }
+    else {
+      var d=Math.hypot(w.x-dimState.p1.x,w.y-dimState.p1.y);
+      dims.push({x1:dimState.p1.x,y1:dimState.p1.y,x2:w.x,y2:w.y,d:d});
+      dimState={active:false,p1:null};
+      showToast('Distance: '+fmtZ(d));
+    }
+    scheduleDraw();
+  }
+  else if (activeTool==='select') {
+    selectedPt=null;
+    for (var i=0;i<surveyPts.length;i++) {
+      var sp3=W2S(surveyPts[i].x,surveyPts[i].y);
+      if (Math.hypot(s.x-sp3.x,s.y-sp3.y)<12) { selectedPt=surveyPts[i]; break; }
+    }
+    updatePointList(); scheduleDraw();
+  }
+});
+
+canvas.addEventListener('pointerup', function(e) { isPanning=false; });
+canvas.addEventListener('dblclick', function(e) {
+  if (activeTool==='boundary' && boundaryPts.length>=3) {
+    boundary=boundaryPts.slice(); boundaryPts=[];
+    showToast('Site boundary set · '+boundary.length+' vertices'); scheduleDraw();
+  }
+  if (activeTool==='road' && roadPts.length>=2) {
+    roads.push({pts:roadPts.slice()}); roadPts=[];
+    showToast('Road centerline added'); scheduleDraw();
+  }
+});
+
+canvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  var s=canvasXY(e);
+  var wx=S2W(s.x,s.y).x, wy=S2W(s.x,s.y).y;
+  var factor=e.deltaY<0?1.12:0.89;
+  cam.zoom=Math.max(5,Math.min(8000,cam.zoom*factor));
+  cam.panX=s.x-wx*cam.zoom; cam.panY=s.y+wy*cam.zoom;
+  scheduleDraw();
+}, {passive:false});
+
+// ── ELEVATION POPUP ───────────────────────────────────────────────────────────
+var pendingPt = null;
+function openElevPopup(sx, sy, wx, wy) {
+  pendingPt={x:wx,y:wy};
+  var pop=document.getElementById('elev-popup');
+  pop.style.left=Math.min(sx+10,canvas.width-180)+'px';
+  pop.style.top =Math.min(sy-40,canvas.height-80)+'px';
+  pop.classList.add('open');
+  var inp=document.getElementById('elev-val-input');
+  inp.value='0'; inp.focus(); inp.select();
+}
+
+document.getElementById('elev-val-input').addEventListener('keydown', function(e) {
+  if (e.key==='Enter') { commitElevPoint(); }
+  if (e.key==='Escape') { document.getElementById('elev-popup').classList.remove('open'); pendingPt=null; }
+});
+
+document.getElementById('elev-val-input').addEventListener('blur', function() {
+  // small delay so Enter commit fires first
+  setTimeout(function() {
+    if (pendingPt) document.getElementById('elev-popup').classList.remove('open');
+  }, 150);
+});
+
+function commitElevPoint() {
+  if (!pendingPt) return;
+  var zDisp=parseFloat(document.getElementById('elev-val-input').value)||0;
+  var zInt=fromDisp(zDisp);
+  surveyPts.push({x:pendingPt.x,y:pendingPt.y,z:zInt,id:nextId++});
+  pendingPt=null;
+  document.getElementById('elev-popup').classList.remove('open');
+  document.getElementById('st-pts').textContent=surveyPts.length;
+  document.getElementById('sb-pts').textContent=surveyPts.length;
+  updatePointList(); scheduleDraw();
+  showToast('Point '+surveyPts.length+': Z='+fmtZ(zInt));
+}
+
+// ── POINT LIST ────────────────────────────────────────────────────────────────
+function updatePointList() {
+  var list=document.getElementById('point-list');
+  if (!surveyPts.length) { list.innerHTML='<div style="color:var(--t3);font-size:9px;padding:4px;">No points — use Point tool</div>'; return; }
+  list.innerHTML=surveyPts.map(function(p,i) {
+    return '<div class="pt-row'+(selectedPt&&selectedPt.id===p.id?' selected':'')+'">'+
+      '<span class="pt-num">'+(i+1)+'</span>'+
+      '<span class="pt-coords">'+toDisp(p.x).toFixed(1)+','+toDisp(p.y).toFixed(1)+'</span>'+
+      '<span class="pt-elev">'+toDisp(p.z).toFixed(2)+uLabel()+'</span>'+
+      '<span class="pt-del" onclick="deletePt('+p.id+')">×</span>'+
+      '</div>';
+  }).join('');
+}
+
+function deletePt(id) {
+  surveyPts=surveyPts.filter(function(p){return p.id!==id;});
+  tin=[]; contours=[]; cutFill=[];
+  updatePointList(); scheduleDraw();
+  document.getElementById('st-pts').textContent=surveyPts.length;
+  document.getElementById('sb-pts').textContent=surveyPts.length;
+  document.getElementById('st-tris').textContent='—';
+}
+
+function clearPoints() {
+  if (!surveyPts.length) return;
+  if (!confirm('Clear all survey points?')) return;
+  surveyPts=[]; tin=[]; contours=[]; cutFill=[]; boundary=[]; roads=[];
+  nextId=1; updatePointList(); scheduleDraw();
+  document.getElementById('st-pts').textContent='0';
+  document.getElementById('sb-pts').textContent='0';
+  document.getElementById('st-tris').textContent='—';
+  document.getElementById('sb-tris').textContent='—';
+  document.getElementById('sb-ctrs').textContent='—';
+  showToast('Scene cleared');
+}
+
+// ── DEMO DATA ─────────────────────────────────────────────────────────────────
+function loadDemo() {
+  clearPoints();
+  // 16-point terrain — hill with valley
+  var raw=[
+    [-20,-20,2.1],[-10,-20,3.4],[0,-20,4.8],[10,-20,4.1],[20,-20,2.6],
+    [-20,-5, 3.2],[-10,-5, 6.8],[0,-5, 9.5],[10,-5, 7.2],[20,-5, 3.8],
+    [-20, 10,2.8],[-10, 10,5.4],[0, 10,8.0],[10, 10,5.6],[20, 10,3.1],
+    [-20, 20,1.9],[0,  20,3.2],[20, 20,2.2],
+  ];
+  raw.forEach(function(r) {
+    var z = units==='imperial' ? r[2]*3.28084 : r[2];
+    surveyPts.push({x:r[0],y:r[1],z:fromDisp(z),id:nextId++});
+  });
+  document.getElementById('st-pts').textContent=surveyPts.length;
+  document.getElementById('sb-pts').textContent=surveyPts.length;
+  updatePointList();
+  computeTIN();
+  showToast('Demo terrain loaded · '+surveyPts.length+' points');
+}
+
+// ── EXPORT DXF ────────────────────────────────────────────────────────────────
+function exportDXF() {
+  if (!contours.length && !surveyPts.length) { showToast('Nothing to export'); return; }
+  var insunits = units==='imperial' ? '2' : '6'; // feet or metres
+  var lines=['0','SECTION','2','HEADER',
+    '9','$ACADVER','1','AC1014',
+    '9','$INSUNITS','70',insunits,
+    '0','ENDSEC'];
+
+  // Layers
+  lines.push('0','SECTION','2','TABLES','0','TABLE','2','LAYER','70','5');
+  var layerDefs=[
+    ['KAMPUS-CONTOUR-MINOR','3'],['KAMPUS-CONTOUR-INDEX','2'],
+    ['KAMPUS-BOUNDARY','30'],['KAMPUS-POINTS','6'],['KAMPUS-ROADS','2']
+  ];
+  layerDefs.forEach(function(l) {
+    lines.push('0','LAYER','2',l[0],'70','0','62',l[1],'6','CONTINUOUS');
+  });
+  lines.push('0','ENDTAB','0','ENDSEC','0','SECTION','2','ENTITIES');
+
+  var f=function(v){ return toDisp(v).toFixed(6); };
+
+  // Contours
+  contours.forEach(function(c) {
+    var lay=c.index?'KAMPUS-CONTOUR-INDEX':'KAMPUS-CONTOUR-MINOR';
+    c.segs.forEach(function(seg) {
+      lines.push('0','LINE','8',lay,
+        '10',f(seg.x1),'20',f(seg.y1),'30',f(c.z),
+        '11',f(seg.x2),'21',f(seg.y2),'31',f(c.z));
+    });
+  });
+
+  // Boundary
+  if (boundary.length>=3) {
+    var n=boundary.length;
+    lines.push('0','LWPOLYLINE','8','KAMPUS-BOUNDARY','90',String(n+1),'70','1','43','0.0');
+    boundary.forEach(function(p){ lines.push('10',f(p.x),'20',f(p.y)); });
+    lines.push('10',f(boundary[0].x),'20',f(boundary[0].y));
+  }
+
+  // Survey points with elevation as Z
+  surveyPts.forEach(function(p) {
+    lines.push('0','POINT','8','KAMPUS-POINTS',
+      '10',f(p.x),'20',f(p.y),'30',f(p.z));
+  });
+
+  // Roads
+  roads.forEach(function(r) {
+    if (r.pts.length<2) return;
+    lines.push('0','LWPOLYLINE','8','KAMPUS-ROADS','90',String(r.pts.length),'70','0','43','0.0');
+    r.pts.forEach(function(p){ lines.push('10',f(p.x),'20',f(p.y)); });
+  });
+
+  lines.push('0','ENDSEC','0','EOF');
+  dl(lines.join('\n'), 'kampus_site.dxf', 'text/plain');
+  showToast('DXF exported · '+contours.length+' contour levels');
+}
+
+// ── EXPORT CSV ────────────────────────────────────────────────────────────────
+function exportCSV() {
+  if (!surveyPts.length) { showToast('No survey points to export'); return; }
+  var rows=['POINT_ID,EASTING,NORTHING,ELEVATION,UNITS'];
+  surveyPts.forEach(function(p,i) {
+    rows.push((i+1)+','+toDisp(p.x).toFixed(4)+','+toDisp(p.y).toFixed(4)+','+toDisp(p.z).toFixed(4)+','+uLabel());
+  });
+  dl(rows.join('\n'), 'kampus_points.csv', 'text/csv');
+  showToast('CSV exported · '+surveyPts.length+' points');
+}
+
+// ── CSV IMPORT ────────────────────────────────────────────────────────────────
+function importCSV(text) {
+  var lines=text.split(/[\r\n]+/);
+  var count=0;
+  for (var i=0;i<lines.length;i++) {
+    var row=lines[i].trim(); if(!row||row[0]==='#'||i===0) continue;
+    var parts=row.split(',');
+    if (parts.length<4) continue;
+    var e=parseFloat(parts[1]), n=parseFloat(parts[2]), z=parseFloat(parts[3]);
+    if (isNaN(e)||isNaN(n)||isNaN(z)) continue;
+    // If the CSV says feet and we're in metric, convert
+    var fileUnit=(parts[4]||'').trim().toLowerCase();
+    var zInt=(fileUnit==='ft'||fileUnit==='feet') ? z/3.28084 : z;
+    var eInt=(fileUnit==='ft'||fileUnit==='feet') ? e/3.28084 : e;
+    var nInt=(fileUnit==='ft'||fileUnit==='feet') ? n/3.28084 : n;
+    surveyPts.push({x:eInt,y:nInt,z:zInt,id:nextId++}); count++;
+  }
+  if (!count) { showToast('No valid point data found'); return; }
+  document.getElementById('st-pts').textContent=surveyPts.length;
+  document.getElementById('sb-pts').textContent=surveyPts.length;
+  updatePointList(); computeTIN();
+  showToast('Imported '+count+' points from CSV');
+}
+
+function triggerCSVImport() {
+  var inp=document.createElement('input');
+  inp.type='file'; inp.accept='.csv,.txt';
+  inp.onchange=function(e) {
+    var file=e.target.files[0]; if(!file) return;
+    var r=new FileReader();
+    r.onload=function(ev){ importCSV(ev.target.result); };
+    r.readAsText(file);
+  };
+  inp.click();
+}
+
+// ── TOGGLE TIN WIREFRAME ──────────────────────────────────────────────────────
+function toggleTIN() {
+  showTIN=!showTIN; scheduleDraw();
+  showToast('TIN wireframe '+(showTIN?'on':'off'));
+}
+
+// ── KOMMAND ───────────────────────────────────────────────────────────────────
+var kInput  = document.getElementById('k-input');
+var kPrefix = document.getElementById('k-prefix');
+var spaceDown = false;
+
+kInput.addEventListener('keydown', function(e) {
+  if (e.key==='Escape') { kInput.value=''; kPrefix.textContent='≫'; return; }
+  if (e.key!=='Enter') return;
+  var raw=kInput.value.trim().toUpperCase();
+  if (!raw) return;
+  var handled=true;
+  if (raw==='P'||raw==='POINT')    setTool('point');
+  else if (raw==='B'||raw==='BOUNDARY') setTool('boundary');
+  else if (raw==='V'||raw==='SELECT')   setTool('select');
+  else if (raw==='R'||raw==='ROAD')     setTool('road');
+  else if (raw==='D'||raw==='DIM')      setTool('dim');
+  else if (raw==='G'||raw==='PAD')      setTool('pad');
+  else if (raw==='TIN')    computeTIN();
+  else if (raw==='CTR'||raw==='CONTOURS') computeContours();
+  else if (raw==='CF'||raw==='CUTFILL') computeCutFill();
+  else if (raw==='DXF')    exportDXF();
+  else if (raw==='CSV')    exportCSV();
+  else if (raw==='IMPORT') triggerCSVImport();
+  else if (raw==='DEMO')   loadDemo();
+  else if (raw==='CLEAR')  clearPoints();
+  else if (raw==='WIRE'||raw==='TIN-WIRE') toggleTIN();
+  else if (raw==='U'||raw==='UNITS') toggleUnits();
+  else if (raw==='H'||raw==='HOME') { initCamera(); scheduleDraw(); }
+  else { showToast('Unknown: '+raw); handled=false; }
+  if (handled) kInput.value='';
+  kPrefix.textContent='≫';
+});
+
+kInput.addEventListener('input', function() {
+  var v=kInput.value.trim().toUpperCase();
+  kPrefix.textContent = v ? 'CMD' : '≫';
+});
+
+function kecho(msg) {
+  var el=document.getElementById('k-echo');
+  el.textContent=msg;
+  setTimeout(function(){ if(el.textContent===msg) el.textContent=''; },2000);
+}
+
+document.addEventListener('keydown', function(e) {
+  if (document.activeElement===kInput) return;
+  if (e.key===' ') { e.preventDefault(); spaceDown=true; canvas.style.cursor='grab'; return; }
+  var k=e.key.toUpperCase();
+  if (k==='P') setTool('point');
+  else if (k==='B') setTool('boundary');
+  else if (k==='V') setTool('select');
+  else if (k==='R') setTool('road');
+  else if (k==='D') setTool('dim');
+  else if (k==='G') setTool('pad');
+  else if (k==='H') { initCamera(); scheduleDraw(); }
+  else if (k==='U') toggleUnits();
+  else if (k==='T') computeTIN();
+  else if (k==='C') computeContours();
+  else if (k==='W') toggleTIN();
+  // Focus kommand on alphanumeric
+  else if (/^[A-Z0-9]$/.test(k) && !e.ctrlKey && !e.metaKey) {
+    kInput.focus(); kInput.value=k; kPrefix.textContent='CMD';
+  }
+});
+document.addEventListener('keyup', function(e) {
+  if (e.key===' ') { spaceDown=false; canvas.style.cursor='crosshair'; }
+});
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+var _tt=null;
+function showToast(msg) {
+  var el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(_tt); _tt=setTimeout(function(){ el.classList.remove('show'); },2800);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+window.addEventListener('resize', function() { resizeCanvas(); });
+
+(function init() {
+  resizeCanvas();
+  initCamera();
+  updatePointList();
+
+  // Auto-restore unit preference
+  try {
+    var saved=localStorage.getItem(SPLASH_KEY);
+    if (saved==='metric'||saved==='imperial') { initUnits(saved); return; }
+  } catch(e) {}
+  // Show splash if no saved preference
+})();
+function dl(data, name, type) {
+  var a=document.createElement('a');
+  a.href='data:'+type+';charset=utf-8,'+encodeURIComponent(data);
+  a.download=name; a.click();
+}
+</script>
+</body>
+</html>
